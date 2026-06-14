@@ -40,6 +40,13 @@ db = client[os.environ["DB_NAME"]]
 
 app = FastAPI(title="Velora API")
 api = APIRouter(prefix="/api")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"https://velora-one-kappa.vercel.app/",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 logger = logging.getLogger("velora")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -953,15 +960,6 @@ async def health():
 # Mount
 # ============================================================
 app.include_router(api)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 
 @app.on_event("shutdown")
 async def shutdown():
