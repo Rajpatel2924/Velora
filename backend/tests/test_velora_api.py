@@ -5,7 +5,10 @@ import uuid
 import pytest
 import requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://velora-wellness-1.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get(
+    "BACKEND_URL",
+    "https://your-render-app.onrender.com"
+).rstrip("/")
 API = f"{BASE_URL}/api"
 
 # Generate a unique email per run so re-runs don't collide
