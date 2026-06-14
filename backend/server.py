@@ -10,7 +10,7 @@ from typing import List, Optional
 
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, Form
 from fastapi.responses import StreamingResponse, Response
-from starlette.middleware.cors import CORSMiddleware
+from fastapi.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
 
@@ -38,15 +38,23 @@ mongo_url = os.environ["MONGO_URL"]
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ["DB_NAME"]]
 
+from fastapi.middleware.cors import CORSMiddleware
+
 app = FastAPI(title="Velora API")
-api = APIRouter(prefix="/api")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"https://velora-one-kappa.vercel.app/",
+    allow_origins=[
+        "https://velora-one-kappa.vercel.app",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+api = APIRouter(prefix="/api")
 
 logger = logging.getLogger("velora")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
