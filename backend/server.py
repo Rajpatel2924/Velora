@@ -11,7 +11,6 @@ from typing import List, Optional
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, Form
 from fastapi.responses import StreamingResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
 
 ROOT_DIR = Path(__file__).parent
@@ -33,9 +32,16 @@ from models import (
     new_id, now_iso,
 )
 from auth_utils import hash_password, verify_password, create_token, get_current_user_id
-
+from motor.motor_asyncio import AsyncIOMotorClient
+import certifi
 mongo_url = os.environ["MONGO_URL"]
-client = AsyncIOMotorClient(mongo_url)
+
+client = AsyncIOMotorClient(
+    mongo_url,
+    tls=True,
+    tlsCAFile=certifi.where()
+)
+
 db = client[os.environ["DB_NAME"]]
 
 from fastapi.middleware.cors import CORSMiddleware
