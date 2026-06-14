@@ -1,11 +1,15 @@
-"""AI service: Claude chat, sentiment analysis, insights via Emergent LLM key."""
 import os
 import json
 import re
+from anthropic import AsyncAnthropic
 
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 
-EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
-CLAUDE_MODEL = "claude-sonnet-4-5-20250929"
+client = AsyncAnthropic(
+    api_key=ANTHROPIC_API_KEY
+)
+
+CLAUDE_MODEL = "claude-sonnet-4-5"
 
 SYSTEM_PROMPT = """You are Velora, an empathetic AI mental wellness companion designed for Gen Z.
 Your tone is warm, casual, validating, and never preachy. You speak like a thoughtful friend, not a therapist.
@@ -20,79 +24,119 @@ Safety: If a user mentions self-harm, suicide, or immediate danger, gently encou
 End with a soft, optional follow-up question when appropriate."""
 
 
-def _make_chat(session_id: str, system: str = SYSTEM_PROMPT) -> LlmChat:
-    chat = LlmChat(
-        api_key=EMERGENT_LLM_KEY,
-        session_id=session_id,
-        system_message=system,
-    ).with_model("anthropic", CLAUDE_MODEL)
-    return chat
-
 
 async def stream_chat_response(session_id: str, prior_messages: list, user_text: str):
-    """Yield text deltas for SSE streaming. prior_messages is list of {role, content}."""
-    # Build context: include recent history in system prompt to keep it stateless per call
-    history_block = ""
-    if prior_messages:
-        recent = prior_messages[-10:]
-        lines = []
-        for m in recent:
-            role = "User" if m["role"] == "user" else "Velora"
-            lines.append(f"{role}: {m['content']}")
-        history_block = "\n\nRecent conversation:\n" + "\n".join(lines)
-    chat = _make_chat(session_id, SYSTEM_PROMPT + history_block)
-    async for ev in chat.stream_message(UserMessage(text=user_text)):
-        if isinstance(ev, TextDelta):
-            yield ev.content
-        elif isinstance(ev, StreamDone):
-            break
 
+    messages = []
+
+    for msg in prior_messages[-10:]:
+        messages.append(
+            {
+                "role": msg["role"],
+                "content": msg["content"]
+            }
+        )
+
+    messages.append(
+        {
+            "role": "user",
+            "content": user_text
+        }
+    )
+
+    async with client.messages.stream(
+        model=CLAUDE_MODEL,
+        max_tokens=1000,
+        system=SYSTEM_PROMPT,
+        messages=messages,
+    ) as stream:
+
+        async for text in stream.text_stream:
+            yield text
 
 async def analyze_sentiment(text: str) -> dict:
     """Return {sentiment, score (-1..1), insight}."""
-    prompt = f"""Analyze the emotional sentiment of this journal entry. Respond ONLY with a valid JSON object with keys:
-- "sentiment": one of "positive", "neutral", "negative"
-- "score": a float between -1.0 (very negative) and 1.0 (very positive)
-- "insight": a single warm, supportive sentence (max 25 words) that validates the writer and notes one pattern or suggestion.
+
+    prompt = f"""Analyze the emotional sentiment of this journal entry.
+
+Respond ONLY with valid JSON:
+
+{{
+    "sentiment": "positive|neutral|negative",
+    "score": 0.0,
+    "insight": "short supportive insight"
+}}
 
 Journal entry:
 \"\"\"{text[:2000]}\"\"\"
+"""
 
-JSON only, no markdown."""
-    chat = _make_chat("sentiment-" + str(hash(text))[:8], "You are a sentiment analysis assistant. Respond with valid JSON only.")
-    full = ""
-    async for ev in chat.stream_message(UserMessage(text=prompt)):
-        if isinstance(ev, TextDelta):
-            full += ev.content
-        elif isinstance(ev, StreamDone):
-            break
-    # Extract JSON
     try:
-        m = re.search(r"\{.*\}", full, re.DOTALL)
-        data = json.loads(m.group(0)) if m else {}
+        response = await client.messages.create(
+            model=CLAUDE_MODEL,
+            max_tokens=300,
+            system="You are a sentiment analysis assistant. Respond with valid JSON only.",
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+        )
+
+        result = response.content[0].text.strip()
+
+        # Extract JSON if Claude adds extra text
+        match = re.search(r"\{.*\}", result, re.DOTALL)
+
+        if not match:
+            raise ValueError("No JSON found in response")
+
+        data = json.loads(match.group(0))
+
         return {
             "sentiment": data.get("sentiment", "neutral"),
             "score": float(data.get("score", 0.0)),
-            "insight": data.get("insight", ""),
+            "insight": data.get("insight", "")
         }
-    except Exception:
-        return {"sentiment": "neutral", "score": 0.0, "insight": ""}
+
+    except Exception as e:
+        print(f"Sentiment analysis error: {e}")
+
+        return {
+            "sentiment": "neutral",
+            "score": 0.0,
+            "insight": ""
+        }
 
 
 async def generate_wellness_insight(summary: dict) -> str:
     """Given a summary dict with recent mood, habits, sleep, streak — return a short insight."""
-    prompt = f"""Based on this user's recent wellness data, write a warm 2-3 sentence insight with one actionable suggestion. Be specific, empathetic, and Gen Z-friendly. Avoid clinical tone.
+
+    prompt = f"""Based on this user's recent wellness data, write a warm 2-3 sentence insight with one actionable suggestion.
+
+Be specific, empathetic, and Gen Z-friendly.
+Avoid clinical tone.
 
 Data:
 {json.dumps(summary, indent=2)}
+"""
 
-Insight:"""
-    chat = _make_chat("insight-" + str(hash(json.dumps(summary, sort_keys=True)))[:8],
-                      "You are Velora, a wellness coach. Be warm and concise.")
-    full = ""
-    async for ev in chat.stream_message(UserMessage(text=prompt)):
-        if isinstance(ev, TextDelta):
-            full += ev.content
-        elif isinstance(ev, StreamDone):
-            break
-    return full.strip()
+    try:
+        response = await client.messages.create(
+            model=CLAUDE_MODEL,
+            max_tokens=300,
+            system="You are Velora, a wellness coach. Be warm, supportive, concise, and Gen Z-friendly.",
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+        )
+
+        return response.content[0].text.strip()
+
+    except Exception as e:
+        print(f"Wellness insight error: {e}")
+        return "You've been showing up for yourself consistently. Consider taking a few minutes today to reflect on one small win and how it made you feel."
