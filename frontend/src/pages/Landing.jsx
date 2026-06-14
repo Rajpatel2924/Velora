@@ -45,7 +45,7 @@ export default function Landing() {
           <a href="#testimonials" className="hover:text-white">Reviews</a>
           <a href="#faq" className="hover:text-white">FAQ</a>
         </nav>
-        <Link to="/auth" data-testid="landing-cta-nav" className="px-5 py-2 rounded-full gradient-brand text-sm font-medium hover:shadow-[0_0_24px_rgba(139,92,246,0.4)] transition">
+        <Link to="/auth?mode=register" data-testid="landing-cta-nav" className="px-5 py-2 rounded-full gradient-brand text-sm font-medium hover:shadow-[0_0_24px_rgba(139,92,246,0.4)] transition">
           Get started
         </Link>
       </header>
@@ -76,7 +76,7 @@ export default function Landing() {
             initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.4 }}
             className="mt-8 flex flex-wrap items-center gap-3"
           >
-            <Link to="/auth" data-testid="landing-cta-primary" className="px-7 py-3.5 rounded-full gradient-brand font-medium hover:shadow-[0_0_28px_rgba(139,92,246,0.5)] transition">
+            <Link to="/auth?mode=register" data-testid="landing-cta-primary" className="px-7 py-3.5 rounded-full gradient-brand font-medium hover:shadow-[0_0_28px_rgba(139,92,246,0.5)] transition">
               Start your journey
             </Link>
             <Link to="/auth?guest=1" data-testid="landing-cta-guest" className="px-7 py-3.5 rounded-full glass text-white text-sm hover:bg-white/[0.08] transition">
@@ -210,7 +210,7 @@ export default function Landing() {
               <li>· Breathing & meditation</li>
               <li>· Habit tracker</li>
             </ul>
-            <Link to="/auth" data-testid="landing-pricing-free" className="block text-center py-3 rounded-full glass">Get started</Link>
+            <Link to="/auth?mode=register" data-testid="landing-pricing-free" className="block text-center py-3 rounded-full glass">Get started</Link>
           </div>
           <div className="glass-strong rounded-3xl p-8 border border-purple-400/40 relative">
             <div className="absolute -top-3 left-6 px-3 py-1 rounded-full gradient-brand text-xs font-medium">Coming soon</div>

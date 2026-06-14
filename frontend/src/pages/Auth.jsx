@@ -9,7 +9,7 @@ export default function Auth() {
   const { login, register, guest, user } = useAuth();
   const nav = useNavigate();
   const [params] = useSearchParams();
-  const [mode, setMode] = useState("login");
+  const [mode, setMode] = useState(params.get("mode") === "register" ? "register" : "login");
   const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [busy, setBusy] = useState(false);
 
