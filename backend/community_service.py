@@ -64,7 +64,7 @@ Post to moderate:
 
 JSON only:"""
 
-        try:
+    try:
         response = await client.messages.create(
             model=CLAUDE_MODEL,
             max_tokens=300,
