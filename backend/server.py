@@ -3,6 +3,7 @@ import os
 import io
 import json
 import logging
+from openai import AsyncOpenAI
 from datetime import datetime, timezone, date, timedelta
 from pathlib import Path
 from typing import List, Optional
@@ -15,6 +16,9 @@ from dotenv import load_dotenv
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
+openai_client = AsyncOpenAI(
+    api_key=os.getenv("OPENAI_API_KEY")
+)
 
 from models import (
     RegisterRequest, LoginRequest, GuestRequest, AuthResponse,
@@ -397,34 +401,67 @@ async def chat_send(req: ChatMessageCreate, user_id: str = Depends(get_current_u
 # VOICE (Whisper STT + TTS)
 # ============================================================
 @api.post("/voice/transcribe")
-async def transcribe_audio(audio: UploadFile = File(...), user_id: str = Depends(get_current_user_id)):
+async def transcribe_audio(
+    audio: UploadFile = File(...),
+    user_id: str = Depends(get_current_user_id)
+):
     try:
-        from emergentintegrations.llm.openai import OpenAISpeechToText
-        stt = OpenAISpeechToText(api_key=os.environ.get("EMERGENT_LLM_KEY"))
         data = await audio.read()
+
         bio = io.BytesIO(data)
         bio.name = audio.filename or "recording.webm"
-        result = await stt.transcribe(file=bio, model="whisper-1", response_format="json")
-        return {"text": result.text}
+
+        transcript = await openai_client.audio.transcriptions.create(
+            model="gpt-4o-mini-transcribe",
+            file=bio
+        )
+
+        return {
+            "text": transcript.text
+        }
+
     except Exception as e:
         logger.exception("transcribe failed")
-        raise HTTPException(status_code=500, detail=f"Transcription failed: {e}")
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Transcription failed: {e}"
+        )
 
 
 @api.post("/voice/speak")
-async def text_to_speech(payload: dict, user_id: str = Depends(get_current_user_id)):
+async def text_to_speech(
+    payload: dict,
+    user_id: str = Depends(get_current_user_id)
+):
     text = (payload or {}).get("text", "").strip()
-    voice = (payload or {}).get("voice", "shimmer")
+    voice = (payload or {}).get("voice", "alloy")
+
     if not text:
-        raise HTTPException(status_code=400, detail="Text required")
+        raise HTTPException(
+            status_code=400,
+            detail="Text required"
+        )
+
     try:
-        from emergentintegrations.llm.openai import OpenAITextToSpeech
-        tts = OpenAITextToSpeech(api_key=os.environ.get("EMERGENT_LLM_KEY"))
-        audio_bytes = await tts.generate_speech(text=text[:1500], model="tts-1", voice=voice)
-        return Response(content=audio_bytes, media_type="audio/mpeg")
+        speech = await openai_client.audio.speech.create(
+            model="gpt-4o-mini-tts",
+            voice=voice,
+            input=text[:1500]
+        )
+
+        return Response(
+            content=speech.content,
+            media_type="audio/mpeg"
+        )
+
     except Exception as e:
         logger.exception("tts failed")
-        raise HTTPException(status_code=500, detail=f"TTS failed: {e}")
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"TTS failed: {e}"
+        )
 
 
 # ============================================================
