@@ -2,7 +2,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import {
   Home, MessageCircle, Smile, BookHeart, ListChecks, Wind, Sparkles,
-  ClipboardCheck, User, LogOut, Phone, Menu, X
+  ClipboardCheck, User, LogOut, Phone, Menu, X, Users, Library, Music, Shield
 } from "lucide-react";
 import { useState } from "react";
 import SOSDialog from "./SOSDialog";
@@ -15,6 +15,9 @@ const navItems = [
   { to: "/app/habits", label: "Habits", icon: ListChecks,    testId: "nav-habits" },
   { to: "/app/breathing", label: "Breathe", icon: Wind,      testId: "nav-breathing" },
   { to: "/app/meditation", label: "Meditate", icon: Sparkles, testId: "nav-meditation" },
+  { to: "/app/community", label: "Community", icon: Users,   testId: "nav-community" },
+  { to: "/app/playlists", label: "Playlists", icon: Music,   testId: "nav-playlists" },
+  { to: "/app/resources", label: "Library", icon: Library,   testId: "nav-resources" },
   { to: "/app/assessments", label: "Assess", icon: ClipboardCheck, testId: "nav-assessments" },
 ];
 
@@ -82,6 +85,19 @@ export default function AppShell({ children }) {
           >
             <User className="w-4 h-4" /> Profile
           </Link>
+          {user?.is_admin && (
+            <Link
+              to="/app/admin"
+              data-testid="nav-admin"
+              className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm transition-all ${
+                isActive("/app/admin")
+                  ? "bg-amber-500/10 text-amber-200 border border-amber-400/30"
+                  : "text-amber-300/70 hover:text-amber-200 hover:bg-amber-500/10"
+              }`}
+            >
+              <Shield className="w-4 h-4" /> Admin
+            </Link>
+          )}
           <div className="px-3 py-2 text-xs text-slate-500 flex items-center justify-between" data-testid="user-greeting">
             <span className="truncate">Hi, {user?.name || "friend"}</span>
             <button onClick={handleLogout} className="text-slate-400 hover:text-white" data-testid="logout-button" title="Sign out">

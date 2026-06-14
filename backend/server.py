@@ -25,6 +25,7 @@ from models import (
     ChatMessageCreate, ChatMessage,
     AssessmentSubmit, AssessmentResult,
     SessionLog, SleepCreate, SleepEntry,
+    PostCreate, ReactionToggle, ReportCreate, CommunityPost,
     new_id, now_iso,
 )
 from auth_utils import hash_password, verify_password, create_token, get_current_user_id
@@ -57,6 +58,7 @@ def _public_user(u: dict) -> dict:
         "name": u.get("name"),
         "email": u.get("email"),
         "is_guest": u.get("is_guest", False),
+        "is_admin": (u.get("email") or "").lower() in [e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()],
         "avatar": u.get("avatar"),
         "onboarding": u.get("onboarding"),
         "onboarding_complete": u.get("onboarding_complete", False),
@@ -689,6 +691,212 @@ async def emergency_resources():
             "Write down what you're feeling without judgement.",
         ],
     }
+
+
+# ============================================================
+# COMMUNITY
+# ============================================================
+from community_service import ROOMS, generate_handle, ai_moderate
+from resources_data import RESOURCES, CATEGORIES as RESOURCE_CATEGORIES
+from spotify_service import search_playlists, list_moods as spotify_list_moods
+
+ADMIN_EMAILS = [e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()]
+
+
+async def _require_admin(user_id: str = Depends(get_current_user_id)) -> dict:
+    user = await db.users.find_one({"id": user_id})
+    if not user or (user.get("email") or "").lower() not in ADMIN_EMAILS:
+        raise HTTPException(status_code=403, detail="Admin only")
+    return user
+
+
+def _public_post(p: dict, current_user_id: Optional[str] = None) -> dict:
+    reactions = p.get("reactions", {})
+    return {
+        "id": p["id"],
+        "room_slug": p["room_slug"],
+        "handle": p["handle"],
+        "content": p["content"],
+        "status": p.get("status", "active"),
+        "ai_flagged": p.get("ai_flagged", False),
+        "reactions": {k: len(v) for k, v in reactions.items()},
+        "user_reactions": [k for k, v in reactions.items() if current_user_id and current_user_id in v],
+        "report_count": p.get("report_count", 0),
+        "is_own": current_user_id == p.get("user_id") if current_user_id else False,
+        "timestamp": p["timestamp"],
+    }
+
+
+@api.get("/community/rooms")
+async def list_rooms():
+    out = []
+    for r in ROOMS:
+        cnt = await db.posts.count_documents({"room_slug": r["slug"], "status": "active"})
+        out.append({**r, "post_count": cnt})
+    return out
+
+
+@api.get("/community/posts")
+async def list_posts(room_slug: Optional[str] = None, user_id: str = Depends(get_current_user_id)):
+    query = {"status": "active"}
+    if room_slug:
+        query["room_slug"] = room_slug
+    cursor = db.posts.find(query, {"_id": 0}).sort("timestamp", -1).limit(100)
+    posts = await cursor.to_list(100)
+    return [_public_post(p, user_id) for p in posts]
+
+
+@api.post("/community/posts")
+async def create_post(req: PostCreate, user_id: str = Depends(get_current_user_id)):
+    if not any(r["slug"] == req.room_slug for r in ROOMS):
+        raise HTTPException(status_code=400, detail="Unknown room")
+    content = (req.content or "").strip()
+    if len(content) < 3:
+        raise HTTPException(status_code=400, detail="Post too short")
+    if len(content) > 2000:
+        raise HTTPException(status_code=400, detail="Post too long (2000 char max)")
+
+    # AI moderation
+    mod = await ai_moderate(content)
+    status_val = "hidden" if mod.get("flagged") and mod.get("severity") == "high" else "active"
+
+    # Stable handle per user per room for thread continuity
+    existing = await db.community_handles.find_one({"user_id": user_id, "room_slug": req.room_slug})
+    if existing:
+        handle = existing["handle"]
+    else:
+        handle = generate_handle()
+        await db.community_handles.insert_one({"user_id": user_id, "room_slug": req.room_slug, "handle": handle})
+
+    post = CommunityPost(
+        user_id=user_id, room_slug=req.room_slug, handle=handle, content=content,
+        status=status_val, ai_flagged=bool(mod.get("flagged")),
+        ai_reason=mod.get("reason"), ai_severity=mod.get("severity"),
+    )
+    await db.posts.insert_one(post.model_dump())
+    await _award_xp(user_id, 8)
+    if status_val == "hidden":
+        return {"hidden": True, "reason": "Your post was held for review by our moderation system."}
+    return _public_post(post.model_dump(), user_id)
+
+
+@api.post("/community/posts/{post_id}/react")
+async def react_to_post(post_id: str, req: ReactionToggle, user_id: str = Depends(get_current_user_id)):
+    if req.reaction not in ("heart", "hug", "growth"):
+        raise HTTPException(status_code=400, detail="Invalid reaction")
+    post = await db.posts.find_one({"id": post_id})
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    reactions = post.get("reactions", {"heart": [], "hug": [], "growth": []})
+    arr = reactions.get(req.reaction, [])
+    if user_id in arr:
+        arr.remove(user_id)
+    else:
+        arr.append(user_id)
+    reactions[req.reaction] = arr
+    await db.posts.update_one({"id": post_id}, {"$set": {"reactions": reactions}})
+    return _public_post({**post, "reactions": reactions}, user_id)
+
+
+@api.post("/community/posts/{post_id}/report")
+async def report_post(post_id: str, req: ReportCreate, user_id: str = Depends(get_current_user_id)):
+    existing = await db.post_reports.find_one({"post_id": post_id, "user_id": user_id})
+    if existing:
+        return {"ok": True, "already_reported": True}
+    await db.post_reports.insert_one({"post_id": post_id, "user_id": user_id, "reason": req.reason or "", "timestamp": now_iso()})
+    new_count = await db.post_reports.count_documents({"post_id": post_id})
+    update = {"report_count": new_count}
+    if new_count >= 3:
+        update["status"] = "hidden"
+    await db.posts.update_one({"id": post_id}, {"$set": update})
+    return {"ok": True, "report_count": new_count}
+
+
+@api.delete("/community/posts/{post_id}")
+async def delete_post(post_id: str, user_id: str = Depends(get_current_user_id)):
+    post = await db.posts.find_one({"id": post_id})
+    if not post:
+        raise HTTPException(status_code=404, detail="Not found")
+    user = await db.users.find_one({"id": user_id})
+    is_admin = (user.get("email") or "").lower() in ADMIN_EMAILS if user else False
+    if post["user_id"] != user_id and not is_admin:
+        raise HTTPException(status_code=403, detail="Not allowed")
+    await db.posts.update_one({"id": post_id}, {"$set": {"status": "removed"}})
+    return {"ok": True}
+
+
+# ---------- Admin moderation ----------
+@api.get("/admin/moderation")
+async def admin_moderation_queue(admin=Depends(_require_admin)):
+    posts = await db.posts.find({
+        "$or": [
+            {"ai_flagged": True},
+            {"report_count": {"$gte": 1}},
+            {"status": "hidden"},
+        ]
+    }, {"_id": 0}).sort("timestamp", -1).to_list(200)
+    return [{**_public_post(p, admin["id"]), "ai_reason": p.get("ai_reason"), "ai_severity": p.get("ai_severity"), "status": p.get("status")} for p in posts]
+
+
+@api.post("/admin/moderation/{post_id}/action")
+async def admin_action(post_id: str, payload: dict, admin=Depends(_require_admin)):
+    action = (payload or {}).get("action")  # approve / remove
+    if action == "approve":
+        await db.posts.update_one({"id": post_id}, {"$set": {"status": "active", "ai_flagged": False}})
+    elif action == "remove":
+        await db.posts.update_one({"id": post_id}, {"$set": {"status": "removed"}})
+    else:
+        raise HTTPException(status_code=400, detail="Unknown action")
+    return {"ok": True}
+
+
+@api.get("/admin/stats")
+async def admin_stats(admin=Depends(_require_admin)):
+    return {
+        "users": await db.users.count_documents({}),
+        "guests": await db.users.count_documents({"is_guest": True}),
+        "posts_active": await db.posts.count_documents({"status": "active"}),
+        "posts_hidden": await db.posts.count_documents({"status": "hidden"}),
+        "posts_removed": await db.posts.count_documents({"status": "removed"}),
+        "moods_total": await db.moods.count_documents({}),
+        "journals_total": await db.journals.count_documents({}),
+        "chat_messages_total": await db.chat_messages.count_documents({}),
+    }
+
+
+# ============================================================
+# RESOURCES (curated library)
+# ============================================================
+@api.get("/resources")
+async def resources(category: Optional[str] = None, type: Optional[str] = None, q: Optional[str] = None):
+    items = list(RESOURCES)
+    if category:
+        items = [r for r in items if r["category"] == category]
+    if type:
+        items = [r for r in items if r["type"] == type]
+    if q:
+        ql = q.lower()
+        items = [r for r in items if ql in r["title"].lower() or ql in r["description"].lower() or ql in r["source"].lower()]
+    return {"items": items, "total": len(items)}
+
+
+@api.get("/resources/categories")
+async def resource_categories():
+    return RESOURCE_CATEGORIES
+
+
+# ============================================================
+# SPOTIFY (mood-based playlists)
+# ============================================================
+@api.get("/spotify/moods")
+async def spotify_moods():
+    return spotify_list_moods()
+
+
+@api.get("/spotify/playlists")
+async def spotify_playlists(mood: str = "relaxed", limit: int = 12):
+    items = await search_playlists(mood, limit=min(max(1, limit), 20))
+    return {"mood": mood, "items": items}
 
 
 # ============================================================

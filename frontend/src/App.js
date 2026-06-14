@@ -15,6 +15,10 @@ import Breathing from "@/pages/Breathing";
 import Meditation from "@/pages/Meditation";
 import Assessments from "@/pages/Assessments";
 import Profile from "@/pages/Profile";
+import Community from "@/pages/Community";
+import Resources from "@/pages/Resources";
+import Playlists from "@/pages/Playlists";
+import Admin from "@/pages/Admin";
 
 function AppRoutes() {
   return (
@@ -32,6 +36,11 @@ function AppRoutes() {
       <Route path="/app/breathing" element={<Protected><AppShell><Breathing /></AppShell></Protected>} />
       <Route path="/app/meditation" element={<Protected><AppShell><Meditation /></AppShell></Protected>} />
       <Route path="/app/assessments" element={<Protected><AppShell><Assessments /></AppShell></Protected>} />
+      <Route path="/app/community" element={<Protected><AppShell><Community /></AppShell></Protected>} />
+      <Route path="/app/community/:slug" element={<Protected><AppShell><Community /></AppShell></Protected>} />
+      <Route path="/app/resources" element={<Protected><AppShell><Resources /></AppShell></Protected>} />
+      <Route path="/app/playlists" element={<Protected><AppShell><Playlists /></AppShell></Protected>} />
+      <Route path="/app/admin" element={<Protected><AppShell><Admin /></AppShell></Protected>} />
       <Route path="/app/profile" element={<Protected><AppShell><Profile /></AppShell></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

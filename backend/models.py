@@ -182,3 +182,32 @@ class SleepEntry(BaseModel):
 class OnboardingSubmit(BaseModel):
     name: Optional[str] = None
     data: OnboardingData
+
+
+# -------------------- Community --------------------
+class PostCreate(BaseModel):
+    room_slug: str
+    content: str
+
+
+class ReactionToggle(BaseModel):
+    reaction: str  # heart, hug, growth
+
+
+class ReportCreate(BaseModel):
+    reason: Optional[str] = ""
+
+
+class CommunityPost(BaseModel):
+    id: str = Field(default_factory=new_id)
+    user_id: str
+    room_slug: str
+    handle: str
+    content: str
+    status: str = "active"  # active, hidden, removed
+    ai_flagged: bool = False
+    ai_reason: Optional[str] = None
+    ai_severity: Optional[str] = None
+    reactions: Dict[str, List[str]] = Field(default_factory=lambda: {"heart": [], "hug": [], "growth": []})
+    report_count: int = 0
+    timestamp: str = Field(default_factory=now_iso)
