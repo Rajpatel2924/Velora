@@ -5,11 +5,16 @@ import re
 import logging
 from datetime import datetime, timezone
 from typing import Optional
-from emergentintegrations.llm.chat import LlmChat, UserMessage, TextDelta, StreamDone
+from anthropic import AsyncAnthropic
 
 logger = logging.getLogger("velora.community")
-EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 
+client = AsyncAnthropic(
+    api_key=ANTHROPIC_API_KEY
+)
+
+CLAUDE_MODEL = "claude-sonnet-4-5"
 ROOMS = [
     {"slug": "anxiety",       "title": "Anxiety Support",   "description": "Share what's weighing on you — judgement-free.",          "emoji": "💜"},
     {"slug": "college",       "title": "College Life",      "description": "Exams, dorm life, friendships, finding yourself.",        "emoji": "🎓"},
@@ -59,27 +64,43 @@ Post to moderate:
 
 JSON only:"""
 
-    try:
-        chat = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
-            session_id="mod-" + str(hash(text))[:8],
-            system_message="You are a careful content moderation assistant. Reply with JSON only.",
-        ).with_model("anthropic", "claude-sonnet-4-5-20250929")
-        full = ""
-        async for ev in chat.stream_message(UserMessage(text=prompt)):
-            if isinstance(ev, TextDelta):
-                full += ev.content
-            elif isinstance(ev, StreamDone):
-                break
-        m = re.search(r"\{.*\}", full, re.DOTALL)
-        if not m:
-            return {"flagged": False, "reason": None, "severity": None}
-        data = json.loads(m.group(0))
+        try:
+        response = await client.messages.create(
+            model=CLAUDE_MODEL,
+            max_tokens=300,
+            system="You are a careful content moderation assistant. Reply with JSON only.",
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+        )
+
+        result = response.content[0].text.strip()
+
+        match = re.search(r"\{.*\}", result, re.DOTALL)
+
+        if not match:
+            return {
+                "flagged": False,
+                "reason": None,
+                "severity": None
+            }
+
+        data = json.loads(match.group(0))
+
         return {
             "flagged": bool(data.get("flagged", False)),
             "reason": data.get("reason"),
-            "severity": data.get("severity"),
+            "severity": data.get("severity")
         }
+
     except Exception as e:
         logger.warning(f"ai_moderate failed: {e}")
-        return {"flagged": False, "reason": None, "severity": None}
+
+        return {
+            "flagged": False,
+            "reason": None,
+            "severity": None
+        }
