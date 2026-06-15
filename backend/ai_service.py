@@ -1,15 +1,15 @@
 import os
 import json
 import re
-from anthropic import AsyncAnthropic
+from openai import AsyncOpenAI
 
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-client = AsyncAnthropic(
-    api_key=ANTHROPIC_API_KEY
+client = AsyncOpenAI(
+    api_key=OPENAI_API_KEY
 )
 
-CLAUDE_MODEL = "claude-sonnet-4-5"
+OPENAI_MODEL = "gpt-4o-mini"
 
 SYSTEM_PROMPT = """You are Velora, an empathetic AI mental wellness companion designed for Gen Z.
 Your tone is warm, casual, validating, and never preachy. You speak like a thoughtful friend, not a therapist.
@@ -24,10 +24,14 @@ Safety: If a user mentions self-harm, suicide, or immediate danger, gently encou
 End with a soft, optional follow-up question when appropriate."""
 
 
-
 async def stream_chat_response(session_id: str, prior_messages: list, user_text: str):
 
-    messages = []
+    messages = [
+        {
+            "role": "system",
+            "content": SYSTEM_PROMPT
+        }
+    ]
 
     for msg in prior_messages[-10:]:
         messages.append(
@@ -44,15 +48,20 @@ async def stream_chat_response(session_id: str, prior_messages: list, user_text:
         }
     )
 
-    async with client.messages.stream(
-        model=CLAUDE_MODEL,
-        max_tokens=1000,
-        system=SYSTEM_PROMPT,
+    stream = await client.chat.completions.create(
+        model=OPENAI_MODEL,
         messages=messages,
-    ) as stream:
+        temperature=0.7,
+        stream=True
+    )
 
-        async for text in stream.text_stream:
-            yield text
+    async for chunk in stream:
+        if (
+            chunk.choices
+            and chunk.choices[0].delta
+            and chunk.choices[0].delta.content
+        ):
+            yield chunk.choices[0].delta.content
 
 async def analyze_sentiment(text: str) -> dict:
     """Return {sentiment, score (-1..1), insight}."""
@@ -72,19 +81,22 @@ Journal entry:
 """
 
     try:
-        response = await client.messages.create(
-            model=CLAUDE_MODEL,
-            max_tokens=300,
-            system="You are a sentiment analysis assistant. Respond with valid JSON only.",
-            messages=[
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ]
-        )
-
-        result = response.content[0].text.strip()
+        response = await client.chat.completions.create(
+    model=OPENAI_MODEL,
+    messages=[
+        {
+            "role": "system",
+            "content": "You are a sentiment analysis assistant. Respond with valid JSON only."
+        },
+        {
+            "role": "user",
+            "content": prompt
+        }
+    ],
+    temperature=0,
+    max_tokens=300
+)
+        result = response.choices[0].message.content.strip()
 
         # Extract JSON if Claude adds extra text
         match = re.search(r"\{.*\}", result, re.DOTALL)
@@ -123,20 +135,23 @@ Data:
 """
 
     try:
-        response = await client.messages.create(
-            model=CLAUDE_MODEL,
-            max_tokens=300,
-            system="You are Velora, a wellness coach. Be warm, supportive, concise, and Gen Z-friendly.",
-            messages=[
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ]
-        )
+        response = await client.chat.completions.create(
+    model=OPENAI_MODEL,
+    messages=[
+        {
+            "role": "system",
+            "content": "You are Velora, a wellness coach. Be warm, supportive, concise, and Gen Z-friendly."
+        },
+        {
+            "role": "user",
+            "content": prompt
+        }
+    ],
+    temperature=0.7,
+    max_tokens=300
+)
 
-        return response.content[0].text.strip()
-
+        return response.choices[0].message.content.strip()
     except Exception as e:
         print(f"Wellness insight error: {e}")
         return "You've been showing up for yourself consistently. Consider taking a few minutes today to reflect on one small win and how it made you feel."
