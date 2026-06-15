@@ -5,16 +5,15 @@ import re
 import logging
 from datetime import datetime, timezone
 from typing import Optional
-from anthropic import AsyncAnthropic
+from openai import AsyncOpenAI
 
 logger = logging.getLogger("velora.community")
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-client = AsyncAnthropic(
-    api_key=ANTHROPIC_API_KEY
+client = AsyncOpenAI(
+    api_key=OPENAI_API_KEY
 )
 
-CLAUDE_MODEL = "claude-sonnet-4-5"
 ROOMS = [
     {"slug": "anxiety",       "title": "Anxiety Support",   "description": "Share what's weighing on you — judgement-free.",          "emoji": "💜"},
     {"slug": "college",       "title": "College Life",      "description": "Exams, dorm life, friendships, finding yourself.",        "emoji": "🎓"},
@@ -65,19 +64,23 @@ Post to moderate:
 JSON only:"""
 
     try:
-        response = await client.messages.create(
-            model=CLAUDE_MODEL,
-            max_tokens=300,
-            system="You are a careful content moderation assistant. Reply with JSON only.",
-            messages=[
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ]
-        )
+        response = await client.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=[
+        {
+            "role": "system",
+            "content": "You are a careful content moderation assistant. Reply with JSON only."
+        },
+        {
+            "role": "user",
+            "content": prompt
+        }
+    ],
+    max_tokens=300,
+    temperature=0
+)
 
-        result = response.content[0].text.strip()
+result = response.choices[0].message.content.strip()
 
         match = re.search(r"\{.*\}", result, re.DOTALL)
 
