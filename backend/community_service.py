@@ -5,14 +5,15 @@ import re
 import logging
 from datetime import datetime, timezone
 from typing import Optional
-from openai import AsyncOpenAI
+from groq import AsyncGroq
 
-logger = logging.getLogger("velora.community")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-client = AsyncOpenAI(
-    api_key=OPENAI_API_KEY
+client = AsyncGroq(
+    api_key=GROQ_API_KEY
 )
+
+GROQ_MODEL = "llama-3.3-70b-versatile"
 
 ROOMS = [
     {"slug": "anxiety",       "title": "Anxiety Support",   "description": "Share what's weighing on you — judgement-free.",          "emoji": "💜"},
@@ -67,7 +68,7 @@ JSON only:"""
 
     try:
         response = await client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=GROQ_MODEL,
             messages=[
                 {
                     "role": "system",
