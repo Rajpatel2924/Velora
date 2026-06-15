@@ -36,13 +36,14 @@ def generate_handle() -> str:
 
 
 async def ai_moderate(text: str) -> dict:
-    """Returns {'flagged': bool, 'reason': str|None, 'severity': 'low'|'high'|None}.
+    """Returns {'flagged': bool, 'reason': str|None, 'severity': 'low'|'high'|None}."""
 
-    Uses Claude to spot harmful content (abuse, self-harm encouragement, hate, explicit content,
-    spam). Self-harm CONFESSIONS by the poster should NOT be flagged — only ENCOURAGEMENT to others.
-    """
     if not text or not text.strip():
-        return {"flagged": False, "reason": None, "severity": None}
+        return {
+            "flagged": False,
+            "reason": None,
+            "severity": None
+        }
 
     prompt = f"""You are a content moderator for a Gen Z mental wellness community. The community welcomes raw emotional posts including users sharing they feel sad, anxious, hopeless, or are struggling — these are NOT to be flagged.
 
@@ -56,7 +57,8 @@ ONLY flag the post if it contains any of:
 
 If the user themselves expresses suicidal ideation, do NOT flag — they need support, not removal.
 
-Respond with strict JSON: {{"flagged": boolean, "reason": "short reason or null", "severity": "low" or "high" or null}}.
+Respond with strict JSON:
+{{"flagged": boolean, "reason": "short reason or null", "severity": "low" or "high" or null}}
 
 Post to moderate:
 \"\"\"{text[:1500]}\"\"\"
@@ -65,22 +67,22 @@ JSON only:"""
 
     try:
         response = await client.chat.completions.create(
-    model="gpt-4o-mini",
-    messages=[
-        {
-            "role": "system",
-            "content": "You are a careful content moderation assistant. Reply with JSON only."
-        },
-        {
-            "role": "user",
-            "content": prompt
-        }
-    ],
-    max_tokens=300,
-    temperature=0
-)
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a careful content moderation assistant. Reply with JSON only."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            max_tokens=300,
+            temperature=0
+        )
 
-result = response.choices[0].message.content.strip()
+        result = response.choices[0].message.content.strip()
 
         match = re.search(r"\{.*\}", result, re.DOTALL)
 
