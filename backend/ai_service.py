@@ -1,15 +1,16 @@
 import os
 import json
 import re
-from openai import AsyncOpenAI
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+from groq import AsyncGroq
 
-client = AsyncOpenAI(
-    api_key=OPENAI_API_KEY
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+
+client = AsyncGroq(
+    api_key=GROQ_API_KEY
 )
 
-OPENAI_MODEL = "gpt-4o-mini"
+GROQ_MODEL = "llama-3.3-70b-versatile"
 
 SYSTEM_PROMPT = """You are Velora, an empathetic AI mental wellness companion designed for Gen Z.
 Your tone is warm, casual, validating, and never preachy. You speak like a thoughtful friend, not a therapist.
@@ -49,7 +50,7 @@ async def stream_chat_response(session_id: str, prior_messages: list, user_text:
     )
 
     stream = await client.chat.completions.create(
-        model=OPENAI_MODEL,
+        model=GROQ_MODEL,
         messages=messages,
         temperature=0.7,
         stream=True
@@ -82,7 +83,7 @@ Journal entry:
 
     try:
         response = await client.chat.completions.create(
-    model=OPENAI_MODEL,
+    model=GROQ_MODEL,
     messages=[
         {
             "role": "system",
@@ -136,7 +137,7 @@ Data:
 
     try:
         response = await client.chat.completions.create(
-    model=OPENAI_MODEL,
+    model=GROQ_MODEL,
     messages=[
         {
             "role": "system",
